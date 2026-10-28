@@ -3,8 +3,8 @@ import sys
 import threading
 import time
 
-from conexion import (conectar_mysql, guardar_registros,
-                      guardar_resultados, guardar_tiempo)
+from conexion import (conectar_mysql, guardarRegistros,
+                      guardarResultados, guardarTiempo)
 import mysql.connector
 
 ids = []
@@ -35,20 +35,20 @@ with archivo:
         creatinina.append(float(fila[3]))
         urea.append(float(fila[4]))
 
-print("Dataset cargado correctamente")
-print("Total procesado: ", len(ids))
+print("dataset cargado correctamente")
+print("total procesado: ", len(ids))
 
 total = len(ids)
 
 if total != 5000:
-    print("ERROR NO SE CARGO LOS ELEMENTOS NECESARIOS")
+    print("error no se cargo los elementos necesarios")
     sys.exit(1)
 
 tfge = [0.0] * total
 creatininaUmol = [0.0] * total
 ureaMmol = [0.0] * total
 
-def calcular_tfge():
+def calcularTfge():
     for i in range(total):
         if sexo[i] == "Mujer":
             k = 0.7
@@ -62,15 +62,15 @@ def calcular_tfge():
         tfge[i] = (142 * min(cociente, 1) ** a * max(cociente, 1) ** -1.200
                    * 0.9938 ** edad[i] * factor)
 
-def convertir_creatinina():
+def convertirCreatinina():
     for i in range(total):
         creatininaUmol[i] = creatinina[i] * 88.4
 
-def convertir_urea():
+def convertirUrea():
     for i in range(total):
         ureaMmol[i] = urea[i] * 0.1665
 
-def clasificar_estadio(valor):
+def clasificarEstadio(valor):
     valor = round(valor, 2)
     if valor >= 90:
         return "G1"
@@ -84,9 +84,9 @@ def clasificar_estadio(valor):
         return "G4"
     return "G5"
 
-h1 = threading.Thread(target=calcular_tfge)
-h2 = threading.Thread(target=convertir_creatinina)
-h3 = threading.Thread(target=convertir_urea)
+h1 = threading.Thread(target=calcularTfge)
+h2 = threading.Thread(target=convertirCreatinina)
+h3 = threading.Thread(target=convertirUrea)
 
 inicio = time.perf_counter_ns()
 
@@ -103,47 +103,47 @@ tiempo = (fin - inicio) / 1000
 
 for i in range(total):
     print("\n-------------------------")
-    print("REGISTRO :", ids[i])
-    print("EDAD / SEXO :", edad[i], "/", sexo[i])
-    print("\nHILO1 TFGE mL/min/1.73m2")
-    print("TFGe =", round(tfge[i], 2))
-    print("\nHILO2 CREATININA mg/dL A umol/L")
+    print("registro :", ids[i])
+    print("edad / sexo :", edad[i], "/", sexo[i])
+    print("\nhilo1 tfge ml/min/1.73m2")
+    print("tfge =", round(tfge[i], 2))
+    print("\nhilo2 creatinina mg/dl a umol/l")
     print(creatinina[i], "*", "88.4", "=", round(creatininaUmol[i], 2))
-    print("\nHILO3 UREA mg/dL A mmol/L")
+    print("\nhilo3 urea mg/dl a mmol/l")
     print(urea[i], "*", "0.1665", "=", round(ureaMmol[i], 3))
 
 print("\n-----------------------------------")
-print("Registros realizados: ", total)
-print(f"Tiempo de ejecucion: {tiempo:.4f} microsegundos")
+print("registros realizados: ", total)
+print(f"tiempo de ejecucion: {tiempo:.4f} microsegundos")
 
 
 conexion = None
 
 try:
     conexion = conectar_mysql()
-    print("\nConexion exitosa a la base de datos MySQL")
+    print("\nconexion exitosa a la base de datos mysql")
 
     registros = [(ids[i], edad[i], sexo[i], creatinina[i], urea[i])
                  for i in range(total)]
-    guardar_registros(conexion, registros)
+    guardarRegistros(conexion, registros)
 
     resultados = [(ids[i],
                    round(tfge[i], 2),
                    round(creatininaUmol[i], 2),
                    round(ureaMmol[i], 3),
-                   clasificar_estadio(tfge[i]))
+                   clasificarEstadio(tfge[i]))
                   for i in range(total)]
-    guardar_resultados(conexion, "MISD", resultados)
+    guardarResultados(conexion, "MISD", resultados)
 
-    guardar_tiempo(conexion, "MISD", tiempo / 1000, total, 3)
+    guardarTiempo(conexion, "MISD", tiempo / 1000, total, 3)
 
-    print("Datos insertados correctamente en la base de datos MySQL")
-    print("Numero de registros insertados: ", total)
+    print("datos insertados correctamente en la base de datos mysql")
+    print("numero de registros insertados: ", total)
 
 except (mysql.connector.Error, RuntimeError) as error:
     if conexion is not None:
         conexion.rollback()
-    print("Error al insertar datos en la base de datos MySQL: ", error)
+    print("error al insertar datos en la base de datos mysql: ", error)
 
 finally:
     if conexion is not None:

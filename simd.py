@@ -3,11 +3,11 @@ import sys
 import threading
 import time
 
-from conexion import (conectar_mysql, guardar_registros,
-                      guardar_resultados, guardar_tiempo)
+from conexion import (conectar_mysql, guardarRegistros,
+                      guardarResultados, guardarTiempo)
 import mysql.connector
 
-NUM_HILOS = 4
+numHilos = 4
 
 ids = []
 edad = []
@@ -37,21 +37,20 @@ with archivo:
         creatinina.append(float(fila[3]))
         urea.append(float(fila[4]))
 
-print("Dataset cargado correctamente")
-print("Total procesado: ", len(ids))
+print("dataset cargado correctamente")
+print("total procesado: ", len(ids))
 
 total = len(ids)
 
 if total != 5000:
-    print("ERROR NO SE CARGO LOS ELEMENTOS NECESARIOS")
+    print("error no se cargo los elementos necesarios")
     sys.exit(1)
 
 tfge = [0.0] * total
 creatininaUmol = [0.0] * total
 ureaMmol = [0.0] * total
 
-def procesar_bloque(inicioBloque, finBloque):
-    # Misma instruccion para todos los hilos, sobre bloques distintos de datos
+def procesarBloque(inicioBloque, finBloque):
     for i in range(inicioBloque, finBloque):
         if sexo[i] == "Mujer":
             k = 0.7
@@ -67,7 +66,7 @@ def procesar_bloque(inicioBloque, finBloque):
         creatininaUmol[i] = creatinina[i] * 88.4
         ureaMmol[i] = urea[i] * 0.1665
 
-def clasificar_estadio(valor):
+def clasificarEstadio(valor):
     valor = round(valor, 2)
     if valor >= 90:
         return "G1"
@@ -81,16 +80,16 @@ def clasificar_estadio(valor):
         return "G4"
     return "G5"
 
-tamano = total // NUM_HILOS
+tamano = total // numHilos
 
 bloques = []
 hilos = []
 
-for n in range(NUM_HILOS):
+for n in range(numHilos):
     inicioBloque = n * tamano
-    finBloque = total if n == NUM_HILOS - 1 else inicioBloque + tamano
+    finBloque = total if n == numHilos - 1 else inicioBloque + tamano
     bloques.append((inicioBloque, finBloque))
-    hilos.append(threading.Thread(target=procesar_bloque,
+    hilos.append(threading.Thread(target=procesarBloque,
                                   args=(inicioBloque, finBloque)))
 
 inicio = time.perf_counter_ns()
@@ -104,51 +103,51 @@ for h in hilos:
 fin = time.perf_counter_ns()
 tiempo = (fin - inicio) / 1000
 
-for n in range(NUM_HILOS):
+for n in range(numHilos):
     inicioBloque, finBloque = bloques[n]
-    print(f"Hilo {n + 1}: posiciones {inicioBloque} a {finBloque - 1} "
-          f"(registros {ids[inicioBloque]} a {ids[finBloque - 1]})")
+    print(f"hilo {n + 1}: posiciones {inicioBloque} a {finBloque - 1} "
+          f"registros {ids[inicioBloque]} a {ids[finBloque - 1]}")
 
 for i in range(total):
     print("\n-------------------------")
-    print("REGISTRO :", ids[i])
-    print("EDAD / SEXO :", edad[i], "/", sexo[i])
-    print("TFGe mL/min/1.73m2 :", round(tfge[i], 2))
-    print("CREATININA umol/L :", round(creatininaUmol[i], 2))
-    print("UREA mmol/L :", round(ureaMmol[i], 3))
+    print("registro :", ids[i])
+    print("edad / sexo :", edad[i], "/", sexo[i])
+    print("tfge ml/min/1.73m2 :", round(tfge[i], 2))
+    print("creatinina umol/l :", round(creatininaUmol[i], 2))
+    print("urea mmol/l :", round(ureaMmol[i], 3))
 
 print("\n-----------------------------------")
-print("Registros realizados: ", total)
-print(f"Tiempo de ejecucion: {tiempo:.4f} microsegundos")
+print("registros realizados: ", total)
+print(f"tiempo de ejecucion: {tiempo:.4f} microsegundos")
 
 
 conexion = None
 
 try:
     conexion = conectar_mysql()
-    print("\nConexion exitosa a la base de datos MySQL")
+    print("\nconexion exitosa a la base de datos mysql")
 
     registros = [(ids[i], edad[i], sexo[i], creatinina[i], urea[i])
                  for i in range(total)]
-    guardar_registros(conexion, registros)
+    guardarRegistros(conexion, registros)
 
     resultados = [(ids[i],
                    round(tfge[i], 2),
                    round(creatininaUmol[i], 2),
                    round(ureaMmol[i], 3),
-                   clasificar_estadio(tfge[i]))
+                   clasificarEstadio(tfge[i]))
                   for i in range(total)]
-    guardar_resultados(conexion, "SIMD", resultados)
+    guardarResultados(conexion, "SIMD", resultados)
 
-    guardar_tiempo(conexion, "SIMD", tiempo / 1000, total, NUM_HILOS)
+    guardarTiempo(conexion, "SIMD", tiempo / 1000, total, numHilos)
 
-    print("Datos insertados correctamente en la base de datos MySQL")
-    print("Numero de registros insertados: ", total)
+    print("datos insertados correctamente en la base de datos mysql")
+    print("numero de registros insertados: ", total)
 
 except (mysql.connector.Error, RuntimeError) as error:
     if conexion is not None:
         conexion.rollback()
-    print("Error al insertar datos en la base de datos MySQL: ", error)
+    print("error al insertar datos en la base de datos mysql: ", error)
 
 finally:
     if conexion is not None:

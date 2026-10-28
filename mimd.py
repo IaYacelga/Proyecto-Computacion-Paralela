@@ -3,8 +3,8 @@ import sys
 import threading
 import time
 
-from conexion import (conectar_mysql, guardar_registros,
-                      guardar_resultados, guardar_tiempo)
+from conexion import (conectar_mysql, guardarRegistros,
+                      guardarResultados, guardarTiempo)
 import mysql.connector
 
 ids = []
@@ -35,13 +35,13 @@ with archivo:
         creatinina.append(float(fila[3]))
         urea.append(float(fila[4]))
 
-print("Dataset cargado correctamente")
-print("Total procesado: ", len(ids))
+print("dataset cargado correctamente")
+print("total procesado: ", len(ids))
 
 total = len(ids)
 
 if total != 5000:
-    print("ERROR NO SE CARGO LOS ELEMENTOS NECESARIOS")
+    print("error no se cargo los elementos necesarios")
     sys.exit(1)
 
 tfge = [0.0] * total
@@ -50,16 +50,16 @@ ureaMmol = [0.0] * total
 
 tercio = total // 3
 
-inicioh1 = 0
-finh1 = tercio
-inicioh2 = tercio
-finh2 = tercio * 2
-inicioh3 = tercio * 2
-finh3 = total
+inicioH1 = 0
+finH1 = tercio
+inicioH2 = tercio
+finH2 = tercio * 2
+inicioH3 = tercio * 2
+finH3 = total
 
-bloques = [(inicioh1, finh1), (inicioh2, finh2), (inicioh3, finh3)]
+bloques = [(inicioH1, finH1), (inicioH2, finH2), (inicioH3, finH3)]
 
-def calcular_tfge(inicioBloque, finBloque):
+def calcularTfge(inicioBloque, finBloque):
     for i in range(inicioBloque, finBloque):
         if sexo[i] == "Mujer":
             k = 0.7
@@ -73,25 +73,22 @@ def calcular_tfge(inicioBloque, finBloque):
         tfge[i] = (142 * min(cociente, 1) ** a * max(cociente, 1) ** -1.200
                    * 0.9938 ** edad[i] * factor)
 
-def convertir_creatinina(inicioBloque, finBloque):
+def convertirCreatinina(inicioBloque, finBloque):
     for i in range(inicioBloque, finBloque):
         creatininaUmol[i] = creatinina[i] * 88.4
 
-def convertir_urea(inicioBloque, finBloque):
+def convertirUrea(inicioBloque, finBloque):
     for i in range(inicioBloque, finBloque):
         ureaMmol[i] = urea[i] * 0.1665
 
-# Cada hilo ejecuta una instruccion distinta (MIMD) y en cada ronda trabaja
-# sobre un bloque de datos distinto al de los otros hilos. Tras 3 rondas,
-# los 3 indicadores quedan calculados para todos los registros.
-instrucciones = [calcular_tfge, convertir_creatinina, convertir_urea]
+instrucciones = [calcularTfge, convertirCreatinina, convertirUrea]
 
-def trabajo_hilo(n):
+def trabajoHilo(n):
     for ronda in range(3):
         inicioBloque, finBloque = bloques[(n + ronda) % 3]
         instrucciones[n](inicioBloque, finBloque)
 
-def clasificar_estadio(valor):
+def clasificarEstadio(valor):
     valor = round(valor, 2)
     if valor >= 90:
         return "G1"
@@ -105,9 +102,9 @@ def clasificar_estadio(valor):
         return "G4"
     return "G5"
 
-h1 = threading.Thread(target=trabajo_hilo, args=(0,))
-h2 = threading.Thread(target=trabajo_hilo, args=(1,))
-h3 = threading.Thread(target=trabajo_hilo, args=(2,))
+h1 = threading.Thread(target=trabajoHilo, args=(0,))
+h2 = threading.Thread(target=trabajoHilo, args=(1,))
+h3 = threading.Thread(target=trabajoHilo, args=(2,))
 
 inicio = time.perf_counter_ns()
 
@@ -122,54 +119,54 @@ h3.join()
 fin = time.perf_counter_ns()
 tiempo = (fin - inicio) / 1000
 
-print("Hilo 1 (TFGe): bloque", inicioh1, "a", finh1 - 1)
-print("Hilo 2 (Creatinina): bloque", inicioh2, "a", finh2 - 1)
-print("Hilo 3 (Urea): bloque", inicioh3, "a", finh3 - 1)
+print("hilo 1 tfge: bloque", inicioH1, "a", finH1 - 1)
+print("hilo 2 creatinina: bloque", inicioH2, "a", finH2 - 1)
+print("hilo 3 urea: bloque", inicioH3, "a", finH3 - 1)
 
-print("=============Resultado=============")
+print("=============resultado=============")
 
 for i in range(total):
-    print("REGISTRO:          ", ids[i],
-          "/EDAD:          ", edad[i],
-          "/SEXO:          ", sexo[i],
-          "/CREATININA mg/dL:          ", creatinina[i],
-          "/UREA mg/dL:          ", urea[i],
-          "/TFGE:          ", round(tfge[i], 2),
-          "/CREATININA umol/L:          ", round(creatininaUmol[i], 2),
-          "/UREA mmol/L:          ", round(ureaMmol[i], 3))
+    print("registro:          ", ids[i],
+          "/edad:          ", edad[i],
+          "/sexo:          ", sexo[i],
+          "/creatinina mg/dl:          ", creatinina[i],
+          "/urea mg/dl:          ", urea[i],
+          "/tfge:          ", round(tfge[i], 2),
+          "/creatinina umol/l:          ", round(creatininaUmol[i], 2),
+          "/urea mmol/l:          ", round(ureaMmol[i], 3))
 
 print("\n-----------------------------------")
-print("Registros realizados: ", total)
-print(f"Tiempo de ejecucion: {tiempo:.4f} microsegundos")
+print("registros realizados: ", total)
+print(f"tiempo de ejecucion: {tiempo:.4f} microsegundos")
 
 
 conexion = None
 
 try:
     conexion = conectar_mysql()
-    print("\nConexion exitosa a la base de datos MySQL")
+    print("\nconexion exitosa a la base de datos mysql")
 
     registros = [(ids[i], edad[i], sexo[i], creatinina[i], urea[i])
                  for i in range(total)]
-    guardar_registros(conexion, registros)
+    guardarRegistros(conexion, registros)
 
     resultados = [(ids[i],
                    round(tfge[i], 2),
                    round(creatininaUmol[i], 2),
                    round(ureaMmol[i], 3),
-                   clasificar_estadio(tfge[i]))
+                   clasificarEstadio(tfge[i]))
                   for i in range(total)]
-    guardar_resultados(conexion, "MIMD", resultados)
+    guardarResultados(conexion, "MIMD", resultados)
 
-    guardar_tiempo(conexion, "MIMD", tiempo / 1000, total, 3)
+    guardarTiempo(conexion, "MIMD", tiempo / 1000, total, 3)
 
-    print("Datos insertados correctamente en la base de datos MySQL")
-    print("Numero de registros insertados: ", total)
+    print("datos insertados correctamente en la base de datos mysql")
+    print("numero de registros insertados: ", total)
 
 except (mysql.connector.Error, RuntimeError) as error:
     if conexion is not None:
         conexion.rollback()
-    print("Error al insertar datos en la base de datos MySQL: ", error)
+    print("error al insertar datos en la base de datos mysql: ", error)
 
 finally:
     if conexion is not None:
