@@ -8,6 +8,8 @@ CONFIG = {
 }
 NOMBRE_BD = "basedatos"
 
+T_REGISTROS = "registros_renales"
+T_TIEMPOS = "comparacion_tiempos"
 TABLAS_RESULTADOS = {
     "MISD": "resultados_misd",
     "SIMD": "resultados_simd",
@@ -15,81 +17,52 @@ TABLAS_RESULTADOS = {
 }
 
 
-def _sql_tabla_resultados(nombre):
-    return f"""
-        CREATE TABLE IF NOT EXISTS {nombre} (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            registro_id INT UNSIGNED NOT NULL,
-            tfge_ml_min_1_73m2 DECIMAL(6,2) NOT NULL,
-            creatinina_umol_l DECIMAL(7,2) NOT NULL,
-            urea_mmol_l DECIMAL(6,3) NOT NULL,
-            estadio_erc VARCHAR(3) NOT NULL,
-            fecha_procesamiento TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            UNIQUE KEY uq_{nombre}_registro (registro_id),
-            CONSTRAINT fk_{nombre}_registro FOREIGN KEY (registro_id)
-                REFERENCES registros_renales (id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+def _norm(nombre):
+    return nombre.replace("_", "").lower()
+
+
+def resolver_columnas(conexion, tabla, esperadas):
+    """Devuelve {nombre_esperado: nombre_real_en_la_tabla}.
+
+    Ignora mayusculas y guiones bajos, asi 'tfge_ml_min_1_73m2' encuentra
+    'tfgeMlMin173m2' automaticamente.
     """
-
-
-def crear_base_y_tablas():
-    conexion = mysql.connector.connect(**CONFIG)
     cursor = conexion.cursor()
     try:
-        cursor.execute(
-            f"CREATE DATABASE IF NOT EXISTS {NOMBRE_BD} "
-            "CHARACTER SET utf8mb4"
-        )
-        cursor.execute(f"USE {NOMBRE_BD}")
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS registros_renales (
-                id INT UNSIGNED NOT NULL,
-                edad TINYINT UNSIGNED NOT NULL,
-                sexo ENUM('Hombre','Mujer') NOT NULL,
-                creatinina_mg_dl DECIMAL(4,2) NOT NULL,
-                urea_mg_dl DECIMAL(5,2) NOT NULL,
-                PRIMARY KEY (id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """)
-
-        for tabla in TABLAS_RESULTADOS.values():
-            cursor.execute(_sql_tabla_resultados(tabla))
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS comparacion_tiempos (
-                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                arquitectura ENUM('SIMD','MISD','MIMD') NOT NULL,
-                tiempo_ms DECIMAL(10,3) NOT NULL,
-                num_registros INT UNSIGNED NOT NULL,
-                num_trabajadores TINYINT UNSIGNED NOT NULL,
-                fecha_ejecucion TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """)
-        conexion.commit()
+        cursor.execute(f"SHOW COLUMNS FROM `{tabla}`")
+        reales = {_norm(fila[0]): fila[0] for fila in cursor.fetchall()}
     finally:
         cursor.close()
-        conexion.close()
+
+    faltan = [e for e in esperadas if _norm(e) not in reales]
+    if faltan:
+        raise RuntimeError(
+            f"La tabla {tabla} no tiene columnas equivalentes a {faltan}. "
+            f"Columnas reales: {list(reales.values())}"
+        )
+    return {e: reales[_norm(e)] for e in esperadas}
 
 
 def conectar_mysql():
-    crear_base_y_tablas()
+    # Solo conecta: las tablas se crean directamente en MySQL (phpMyAdmin).
     conexion = mysql.connector.connect(database=NOMBRE_BD, **CONFIG)
     return conexion
 
 
 def guardar_registros(conexion, datos):
-    sql = """
-        INSERT INTO registros_renales
-            (id, edad, sexo, creatinina_mg_dl, urea_mg_dl)
+    c = resolver_columnas(
+        conexion, T_REGISTROS,
+        ["id", "edad", "sexo", "creatinina_mg_dl", "urea_mg_dl"])
+    sql = f"""
+        INSERT INTO {T_REGISTROS}
+            ({c['id']}, {c['edad']}, {c['sexo']},
+             {c['creatinina_mg_dl']}, {c['urea_mg_dl']})
         VALUES (%s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
-            edad = VALUES(edad),
-            sexo = VALUES(sexo),
-            creatinina_mg_dl = VALUES(creatinina_mg_dl),
-            urea_mg_dl = VALUES(urea_mg_dl)
+            {c['edad']} = VALUES({c['edad']}),
+            {c['sexo']} = VALUES({c['sexo']}),
+            {c['creatinina_mg_dl']} = VALUES({c['creatinina_mg_dl']}),
+            {c['urea_mg_dl']} = VALUES({c['urea_mg_dl']})
     """
     cursor = conexion.cursor()
     cursor.executemany(sql, datos)
@@ -98,18 +71,24 @@ def guardar_registros(conexion, datos):
 
 
 def guardar_resultados(conexion, arquitectura, filas):
+    """Para MISD, SIMD y MIMD: (registro_id, tfge, creatinina_umol, urea_mmol, estadio)."""
     tabla = TABLAS_RESULTADOS[arquitectura]
+    c = resolver_columnas(
+        conexion, tabla,
+        ["registro_id", "tfge_ml_min_1_73m2", "creatinina_umol_l",
+         "urea_mmol_l", "estadio_erc", "fecha_procesamiento"])
     sql = f"""
         INSERT INTO {tabla}
-            (registro_id, tfge_ml_min_1_73m2, creatinina_umol_l,
-             urea_mmol_l, estadio_erc)
+            ({c['registro_id']}, {c['tfge_ml_min_1_73m2']},
+             {c['creatinina_umol_l']}, {c['urea_mmol_l']},
+             {c['estadio_erc']})
         VALUES (%s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
-            tfge_ml_min_1_73m2 = VALUES(tfge_ml_min_1_73m2),
-            creatinina_umol_l = VALUES(creatinina_umol_l),
-            urea_mmol_l = VALUES(urea_mmol_l),
-            estadio_erc = VALUES(estadio_erc),
-            fecha_procesamiento = CURRENT_TIMESTAMP
+            {c['tfge_ml_min_1_73m2']} = VALUES({c['tfge_ml_min_1_73m2']}),
+            {c['creatinina_umol_l']} = VALUES({c['creatinina_umol_l']}),
+            {c['urea_mmol_l']} = VALUES({c['urea_mmol_l']}),
+            {c['estadio_erc']} = VALUES({c['estadio_erc']}),
+            {c['fecha_procesamiento']} = CURRENT_TIMESTAMP
     """
     cursor = conexion.cursor()
     cursor.executemany(sql, filas)
@@ -119,9 +98,13 @@ def guardar_resultados(conexion, arquitectura, filas):
 
 def guardar_tiempo(conexion, arquitectura, tiempo_ms, num_registros,
                    num_trabajadores):
-    sql = """
-        INSERT INTO comparacion_tiempos
-            (arquitectura, tiempo_ms, num_registros, num_trabajadores)
+    c = resolver_columnas(
+        conexion, T_TIEMPOS,
+        ["arquitectura", "tiempo_ms", "num_registros", "num_trabajadores"])
+    sql = f"""
+        INSERT INTO {T_TIEMPOS}
+            ({c['arquitectura']}, {c['tiempo_ms']},
+             {c['num_registros']}, {c['num_trabajadores']})
         VALUES (%s, %s, %s, %s)
     """
     cursor = conexion.cursor()
